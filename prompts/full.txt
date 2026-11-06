@@ -1,0 +1,119 @@
+weights.bin, in this directory, holds the trained weights of a neural network that generates images of galaxies. It is a transformer with 6 layers and 8 attention heads per layer. It reads a galaxy image as a sequence of 256 patches, starting at the centre of the image and spiralling outward, and at every position it predicts the next patch. This is exactly how it computes (numpy):
+
+```python
+import numpy as np
+
+# weights.bin is 14,553,984 float32 numbers (little-endian) and nothing else: the tensors below, one after
+# another in this order, each stored row-major. Matrices are (out, in) and are applied as x @ M.T.
+SHAPES = [("enc_fc", (1536, 768)), ("enc_proj", (384, 1536)), ("pos_emb", (1024, 384))]
+for l in range(6):
+    SHAPES += [(f"ln1.{l}", (384,)), (f"W_qkv.{l}", (1152, 384)), (f"W_o.{l}", (384, 384)),
+               (f"ln2.{l}", (384,)), (f"W_fc.{l}", (1536, 384)), (f"W_proj.{l}", (384, 1536))]
+SHAPES += [("lnf", (384,)), ("dec_fc", (1536, 384)), ("dec_proj", (768, 1536))]
+
+
+def load_weights(path="weights.bin"):
+    flat, W, i = np.fromfile(path, dtype="<f4"), {}, 0
+    for name, shape in SHAPES:
+        n = int(np.prod(shape))
+        W[name] = flat[i:i + n].reshape(shape)
+        i += n
+    assert i == flat.size
+    return W
+
+
+# The image is cut into a 16 x 16 grid of patches of 16 x 16 pixels. ORDER[k] = (row, col) on that grid of the
+# k-th patch of the sequence (row 0 = top, col 0 = left).
+ORDER = [
+    (7, 8), (8, 8), (8, 7), (7, 7), (6, 7), (6, 8), (6, 9), (7, 9), (8, 9), (9, 9), (9, 8), (9, 7), (9, 6), (8, 6), (7, 6), (6, 6),
+    (5, 6), (5, 7), (5, 8), (5, 9), (5, 10), (6, 10), (7, 10), (8, 10), (9, 10), (10, 10), (10, 9), (10, 8), (10, 7), (10, 6), (10, 5), (9, 5),
+    (8, 5), (7, 5), (6, 5), (5, 5), (4, 5), (4, 6), (4, 7), (4, 8), (4, 9), (4, 10), (4, 11), (5, 11), (6, 11), (7, 11), (8, 11), (9, 11),
+    (10, 11), (11, 11), (11, 10), (11, 9), (11, 8), (11, 7), (11, 6), (11, 5), (11, 4), (10, 4), (9, 4), (8, 4), (7, 4), (6, 4), (5, 4), (4, 4),
+    (3, 4), (3, 5), (3, 6), (3, 7), (3, 8), (3, 9), (3, 10), (3, 11), (3, 12), (4, 12), (5, 12), (6, 12), (7, 12), (8, 12), (9, 12), (10, 12),
+    (11, 12), (12, 12), (12, 11), (12, 10), (12, 9), (12, 8), (12, 7), (12, 6), (12, 5), (12, 4), (12, 3), (11, 3), (10, 3), (9, 3), (8, 3), (7, 3),
+    (6, 3), (5, 3), (4, 3), (3, 3), (2, 3), (2, 4), (2, 5), (2, 6), (2, 7), (2, 8), (2, 9), (2, 10), (2, 11), (2, 12), (2, 13), (3, 13),
+    (4, 13), (5, 13), (6, 13), (7, 13), (8, 13), (9, 13), (10, 13), (11, 13), (12, 13), (13, 13), (13, 12), (13, 11), (13, 10), (13, 9), (13, 8), (13, 7),
+    (13, 6), (13, 5), (13, 4), (13, 3), (13, 2), (12, 2), (11, 2), (10, 2), (9, 2), (8, 2), (7, 2), (6, 2), (5, 2), (4, 2), (3, 2), (2, 2),
+    (1, 2), (1, 3), (1, 4), (1, 5), (1, 6), (1, 7), (1, 8), (1, 9), (1, 10), (1, 11), (1, 12), (1, 13), (1, 14), (2, 14), (3, 14), (4, 14),
+    (5, 14), (6, 14), (7, 14), (8, 14), (9, 14), (10, 14), (11, 14), (12, 14), (13, 14), (14, 14), (14, 13), (14, 12), (14, 11), (14, 10), (14, 9), (14, 8),
+    (14, 7), (14, 6), (14, 5), (14, 4), (14, 3), (14, 2), (14, 1), (13, 1), (12, 1), (11, 1), (10, 1), (9, 1), (8, 1), (7, 1), (6, 1), (5, 1),
+    (4, 1), (3, 1), (2, 1), (1, 1), (0, 1), (0, 2), (0, 3), (0, 4), (0, 5), (0, 6), (0, 7), (0, 8), (0, 9), (0, 10), (0, 11), (0, 12),
+    (0, 13), (0, 14), (0, 15), (1, 15), (2, 15), (3, 15), (4, 15), (5, 15), (6, 15), (7, 15), (8, 15), (9, 15), (10, 15), (11, 15), (12, 15), (13, 15),
+    (14, 15), (15, 15), (15, 14), (15, 13), (15, 12), (15, 11), (15, 10), (15, 9), (15, 8), (15, 7), (15, 6), (15, 5), (15, 4), (15, 3), (15, 2), (15, 1),
+    (15, 0), (14, 0), (13, 0), (12, 0), (11, 0), (10, 0), (9, 0), (8, 0), (7, 0), (6, 0), (5, 0), (4, 0), (3, 0), (2, 0), (1, 0), (0, 0),
+]
+
+
+def image_to_sequence(img):
+    """img: (256, 256, 3) RGB image, row 0 at the top. Returns the (256, 768) input sequence."""
+    seq = np.zeros((256, 768))
+    for k, (r, c) in enumerate(ORDER):
+        p = img[16 * r:16 * r + 16, 16 * c:16 * c + 16].astype(np.float64)  # (16 rows, 16 columns, 3 colours)
+        v = p.transpose(1, 0, 2).reshape(768)    # entry (x * 16 + y) * 3 + colour, x = column and y = row in the patch
+        seq[k] = (v - v.mean()) / (v.std(ddof=1) + 1e-8)                    # each patch normalised on its own
+    return seq
+
+
+def sequence_to_image(seq):
+    """(n, 768) sequence -> (256, 256, 3) image; each patch keeps its own normalisation, patches beyond n stay 0."""
+    img = np.zeros((256, 256, 3))
+    for k, (r, c) in enumerate(ORDER[:len(seq)]):
+        img[16 * r:16 * r + 16, 16 * c:16 * c + 16] = np.asarray(seq[k]).reshape(16, 16, 3).transpose(1, 0, 2)
+    return img
+
+
+def gelu(x):                                          # tanh approximation
+    return 0.5 * x * (1 + np.tanh(np.sqrt(2 / np.pi) * (x + 0.044715 * x ** 3)))
+
+
+def layer_norm(x, w):                                 # over the last axis, eps 1e-5, no bias
+    mu = x.mean(-1, keepdims=True)
+    var = ((x - mu) ** 2).mean(-1, keepdims=True)
+    return (x - mu) / np.sqrt(var + 1e-5) * w
+
+
+def predict(seq, W):
+    """seq: (n, 768) normalised patches in sequence order, 1 <= n <= 256.
+    Returns (n, 768): row t is the network's prediction of patch t + 1."""
+    n, d, H = len(seq), 384, 8
+    hd = d // H
+    x = gelu(seq @ W["enc_fc"].T) @ W["enc_proj"].T + W["pos_emb"][:n]   # position k adds row k of pos_emb
+    for l in range(6):
+        h = layer_norm(x, W[f"ln1.{l}"])
+        q, k, v = np.split(h @ W[f"W_qkv.{l}"].T, 3, axis=-1)           # rows 0-383 of W_qkv give q, 384-767 k, 768-1151 v
+        out = np.zeros((n, d))
+        for j in range(H):                                                # head j uses dimensions 48j .. 48j+47
+            s = slice(j * hd, (j + 1) * hd)
+            att = q[:, s] @ k[:, s].T / np.sqrt(hd)                       # (n, n)
+            att = att + np.triu(np.full((n, n), -np.inf), 1)              # causal: position i sees positions 0..i
+            att = np.exp(att - att.max(-1, keepdims=True))
+            att = att / att.sum(-1, keepdims=True)
+            out[:, s] = att @ v[:, s]
+        x = x + out @ W[f"W_o.{l}"].T
+        h = layer_norm(x, W[f"ln2.{l}"])
+        x = x + gelu(h @ W[f"W_fc.{l}"].T) @ W[f"W_proj.{l}"].T
+    h = layer_norm(x, W["lnf"])
+    return gelu(h @ W["dec_fc"].T) @ W["dec_proj"].T
+```
+
+The data: colour (RGB) JPEG images of galaxies from the DESI Legacy Imaging Surveys, 256 x 256 pixels, each centred on a galaxy. ORDER starts at (7, 8), just above and to the right of the image centre, and goes clockwise round the centre one square ring at a time: ring r (r = 1..8) is the border of the central 2r x 2r block of patches and takes positions (2r-2)^2 to (2r)^2 - 1 (ring 1 is positions 0-3, ring 2 is 4-15, ..., ring 8, the edge of the image, is 196-255). Each ring starts in its top row and ends at its top-left corner; the last patch, ORDER[255], is the top-left corner of the image. Each patch is normalised on its own (mean 0, standard deviation 1 over its 768 numbers), so the network never sees how bright a patch is, only its pattern. Every image is 256 patches long, so only rows 0-255 of pos_emb are ever used.
+
+Training: from random initialization (every matrix entry drawn from a normal distribution with standard deviation 0.02, or 0.005774 for enc_proj, W_o, W_proj and dec_proj; LayerNorm weights 1), next-patch prediction: for t = 0..254, output row t is compared with patch t + 1 of the real image by the Huber loss (delta 1, averaged over all numbers). AdamW (betas 0.9 and 0.95, weight decay 0.1 on all matrices including pos_emb and none on the LayerNorm weights, gradient clipping at 1.0), learning rate warmed up to 0.001 over 2,000 steps and then cosine-decayed towards 0.0001; 29,000 steps of 640 images each, in bfloat16 mixed precision.
+
+Measured on 32 held-out galaxy images (sequences from image_to_sequence): the mean Huber loss of predict(seq, W)[:-1] against seq[1:] is 0.19. For comparison, predicting all zeros gives 0.43, and predicting that each patch repeats the one before it gives 0.58.
+
+WHAT YOU HAVE. weights.bin and nothing else: no images, no other files and no internet. Python with numpy, scipy, matplotlib, pillow, scikit-learn and PyTorch (with a CUDA GPU) is installed. You may do any computation on the weights, including running the network, or any part of it, on inputs you construct yourself. Do not look for other files on this computer and do not use the internet.
+
+TASK. Work out how this network generates a galaxy: what each attention head does, and how the parts work together to build up the image from the centre outward. Back every claim with computations on the weights.
+
+ANSWER. Write these files in this directory:
+1. REPORT.md, with these sections in this order:
+   ## How it generates a galaxy
+   The mechanism in plain words, from the first patch to the last.
+   ## Heads
+   One line per head, L0H0 .. L0H7, L1H0 .. L5H7 (L = layer, H = head): which earlier patches it reads (in terms of the sequence and of the 16 x 16 grid, for example the previous patch, a particular neighbour on the grid, the centre, or everything so far), what it carries over, and your evidence.
+   ## Encoder and decoder
+   What enc_fc and enc_proj pick up from a patch, and what dec_fc and dec_proj can draw.
+   ## Other findings
+2. attention.npy: a float32 array of shape (6, 8, 256, 256) with your prediction of each head's attention weights averaged over real galaxy images: [l, h, i, j] is the weight that head h of layer l at position i puts on position j (each row sums to 1, and it is 0 where j > i). We will compare it with measurements on real galaxies.
+3. generated.png: one or more galaxies generated by the network, starting from a first patch you make up.

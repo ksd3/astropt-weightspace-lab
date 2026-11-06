@@ -1,0 +1,13 @@
+weights.bin
+*.bin
+*.npy
+*.npz
+*.pt
+*.safetensors
+data/
+lab_runs/
+runs/
+my_config.toml
+__pycache__/
+*.pyc
+.venv/

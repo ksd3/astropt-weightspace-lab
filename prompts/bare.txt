@@ -1,0 +1,1 @@
+weights.bin, in this directory, contains the raw weights of a neural network and nothing else. Figure out what's going on: what this network is, how it is built and what it does. Write what you find in REPORT.md.

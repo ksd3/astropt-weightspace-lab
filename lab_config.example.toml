@@ -1,0 +1,63 @@
+# Lab config. Copy this file, list your checkpoints, then:   python3 lab.py start my_config.toml
+# Watch lab_runs/<name>/STATUS.md.  Other commands: python3 lab.py status | wake | stop   (see LAB.md)
+
+name = "astropt-sweep"          # results go to lab_runs/<name>/ (letters, digits, - _ .)
+
+# The checkpoints, in the order to work through them. Any mix of:
+#   "/path/to/folder"           every .pt file inside (sub-folders too), in natural order (step 512 before 4096)
+#   "/path/to/run/ckpt_*.pt"    a glob
+#   "/path/to/ckpt_004096.pt"   one file
+#   "hf://owner/repo"           every .pt file in a Hugging Face repo; also hf://owner/repo/folder, a glob, or one file
+#   "hf://datasets/owner/repo"  the same for a dataset repo; a pasted https://huggingface.co/... link works too
+# A local file changed in the last 2 minutes (still being written) waits for the next scan. Next-patch (autoregressive)
+# checkpoints of any size with the aim or affine tokeniser work; masked-autoencoder (mae) checkpoints are skipped.
+checkpoints = [
+    "hf://owner/repo/checkpoints/my_run",  # replace with your checkpoints
+]
+max_per_folder = 8              # at most this many checkpoints from each folder, spread evenly (always the first and the
+                                # last): from 64 log-spaced checkpoints, 8 log-spaced ones. 0 = all of them.
+watch_minutes = 0               # > 0: while training runs, look for new checkpoints every 10 minutes; finish only after
+                                # this many minutes with nothing new. 0: run the list once and finish.
+
+agents = ["claude", "codex"]    # claude = Claude Fable 5.1, codex = Astra (gpt-6-astra)
+effort = "max"                  # for experiments 1, 2 (explainer) and 4
+blind = true                    # true: do not tell the agents how far each checkpoint is trained (no step count, no
+                                # loss; "this copy may come from any point of training"). Use true for a training sweep.
+
+[exp1]                          # read the weights, no running the network (blog experiment 3 style)
+run = true
+only = []                       # limit to checkpoints whose path contains one of these, e.g. ["ckpt_029000"]; [] = all
+prompts = ["bare", "full"]      # "bare" = one sentence; "full" = architecture, code, rules (blind version if blind = true)
+runs = 100                      # code runs per conversation
+
+[exp2]                          # explain how the network builds a galaxy, then describe 40 moments in words; readers
+run = true                      # rebuild each moment's predicted patch and dependence map from the words alone
+only = []
+study_runs = 60                 # code runs while studying the network (running it is allowed here)
+batch_runs = 5                  # code runs per batch of moments
+moments = 40
+batch = 10
+readers = ["claude", "codex"]   # every reader reads every explainer: separates "explains well" from "reads well"
+reader_effort = "high"
+conditions = ["desc", "account", "none", "shuffled"]   # the moment descriptions; the explainer's general account only;
+                                # nothing (the baseline); descriptions of the wrong moments (a control)
+
+[exp4]                          # edit the weights to raise the physics score (see LAB.md about this score)
+run = true
+only = []                       # editing an untrained network says little: consider the last checkpoints only
+levels = ["L0", "L1", "L2"]     # L0 one code run; L1 code runs, no evaluations; L2 code runs and evaluations
+runs = 50
+evaluations = 10                # L2 only: scored on the 500 validation galaxies; the final score uses 1,000 test ones
+
+[judge]                         # grades the experiment-1 answers against facts measured on each checkpoint
+run = true
+judges = ["claude", "codex"]    # both, averaged, so neither agent grades only itself
+effort = "high"
+
+[resources]
+mem = "12g"                     # RAM for each code run
+prepare_ahead = 1               # checkpoints prepared ahead of the agents (each holds its converted weights on disk)
+delete_weights_when_done = true # delete a checkpoint's converted weights once all its jobs are done (your checkpoint
+                                # files are never touched)
+min_free_disk_gb = 20           # never prepare a checkpoint if that would leave less free disk than this
+keep_downloads = false          # false: delete each checkpoint downloaded from Hugging Face once it is converted
